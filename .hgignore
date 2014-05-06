@@ -1,0 +1,11 @@
+syntax:glob
+
+*.pyc
+*.po
+
+.idea/
+
+zzz*.aig
+xxx*.aig
+yyy*.aig
+www*.aig
