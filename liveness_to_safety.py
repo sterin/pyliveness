@@ -55,9 +55,9 @@ if __name__=="__main__":
     N.add_fair_property([po])
     orig_symbols = utils.make_symbols(N)
 
-    M, xlat, loop = extract_liveness_as_safety(N)
+    M, xlat, loop_start = extract_liveness_as_safety(N)
 
-    symbols= { "_LIVENESS_LOOP_START":loop }
+    symbols= { "_LIVENESS_LOOP_START":loop_start }
     symbols.update( (n,xlat[s]) for n,s in orig_symbols.iteritems() if s in xlat )
 
     print
