@@ -59,8 +59,8 @@ def pyzz_to_pyaig(N):
 
     return aig
 
-def extract(N, candidates, p, k=0):
 
+def extract_stabilizing_constraints(N, candidates, fg_prop, k=0):
     def is_stabilizing(x):
         if S.solve(U[x, k], U[~x, k+1]) == solver.UNSAT:
             return True
@@ -74,7 +74,7 @@ def extract(N, candidates, p, k=0):
             S.equivalence(U[x, k], U[x, k+1])
 
     def implies_prop(x):
-        return S.solve( U[x, k], ~U[p, k] ) == solver.UNSAT
+        return S.solve( U[x, k], ~U[fg_prop, k] ) == solver.UNSAT
 
     def add_polarity(x):
         polarity_constraints.add(x)
@@ -183,7 +183,7 @@ if __name__=="__main__":
 
     print pp
 
-    sc, pc = extract(N, list(N.get_Flops()), ~po)
+    sc, pc = extract_stabilizing_constraints(N, list(N.get_Flops()), ~po)
 
     flops= list(N.get_Flops())
     print len(flops), flops
