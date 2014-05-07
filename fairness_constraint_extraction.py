@@ -1,4 +1,3 @@
-from gi.overrides.keysyms import implies
 from pyzz import *
 from liveness_to_safety import extract_liveness_as_safety
 
@@ -61,6 +60,7 @@ def pyzz_to_pyaig(N):
 
 
 def extract_stabilizing_constraints(N, candidates, fg_prop, k=0):
+
     def is_stabilizing(x):
         if S.solve(U[x, k], U[~x, k+1]) == solver.UNSAT:
             return True
