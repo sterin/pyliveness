@@ -15,10 +15,8 @@ def extract(N, p, k=0):
 
     def add_stabilizing(x):
         stabilizing_constraints.add(x)
-        new_facts = True
         for i in xrange(k+1):
-            w1, w2 = U[x, k], U[x, k+1]
-            S.equivalence(w1, w2)
+            S.equivalence(U[x, k], U[x, k+1])
 
     def implies_prop(x):
         return S.solve( U[x, k], ~U[p, k] ) == solver.UNSAT
@@ -46,15 +44,18 @@ def extract(N, p, k=0):
 
                 if is_stabilizing(ff):
                     add_stabilizing(ff)
+                    new_facts = True
 
             if ff in stabilizing_constraints:
 
                 if implies_prop(ff):
                     add_polarity(~ff)
+                    new_facts = True
                     to_remove.append(ff)
 
                 elif implies_prop(~ff):
                     add_polarity(ff)
+                    new_facts = True
                     to_remove.append(ff)
 
         if not new_facts:
