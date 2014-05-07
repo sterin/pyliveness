@@ -75,10 +75,14 @@ if __name__=="__main__":
         N.flop_init[ff] = solver.l_True if i==0 else solver.l_False
         ff[0] = ffs[(i-1) if i>0 else (len(ffs)-1)]
 
+    xx = N.add_Flop(init=solver.l_Undef)
+    xx[0] = xx
+
     po = N.add_PO(fanin=ffs[-1]&xx)
     N.add_fair_property([po])
 
-    print extract(N, po)
+    sc, pc = extract(N, ~po )
+    print sc, pc
 
     orig_symbols = utils.make_symbols(N)
 
