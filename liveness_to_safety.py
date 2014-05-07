@@ -28,11 +28,15 @@ def liveness_to_safety(N):
 
 def extract_liveness_as_safety(N):
 
+    constraints = list(N.get_constraints())
     bad, loop_start = liveness_to_safety(N)
-    M, xlat = copy_coi(N, bad+[loop_start])
+    M, xlat = copy_coi(N, bad+[loop_start]+constraints)
 
     for b in bad:
         M.add_property(~xlat[b])
+
+    for c in constraints:
+        M.add_constraint(xlat[c])
 
     return M, xlat, xlat[loop_start]
 
