@@ -4,6 +4,61 @@ from liveness_to_safety import extract_liveness_as_safety
 
 values = ['UNDEF', 'ERROR', 'UNSAT', 'SAT']
 
+from pyaig import AIG, write_aiger, read_aiger
+
+def pyzz_to_pyaig(N):
+
+    aig = AIG()
+    xlat = utils.fmap()
+
+    xlat[N.get_True()] = AIG.get_const1()
+
+    for pi in N.get_PIs():
+        xlat[pi] = aig.create_pi()
+
+    flop_init = N.flop_init
+    lbool_to_init = [AIG.INIT_NONDET, AIG.INIT_NONDET, AIG.INIT_ZERO, AIG.INIT_ONE]
+
+    for ff in N.get_Flops():
+        xlat[ff] = aig.create_latch(init=lbool_to_init[flop_init[ff]])
+
+    for a in N.get_Ands():
+        xlat[a] = aig.create_and( xlat[a[0]], xlat[a[1]])
+
+    for ff in N.get_Flops():
+        aig.set_next(xlat[ff], xlat[ff[0]])
+
+    def xlat_po(po):
+        return xlat[ po[0]^po.sign() ]
+
+    for p in N.get_properties():
+        aig.create_po( xlat_po(~p), po_type=AIG.BAD_STATES)
+
+    for c in N.get_constraints():
+        aig.create_po(xlat_po(c), po_type=AIG.CONSTRAINT)
+
+    for fp in N.get_fair_properties():
+        j_pos = [ aig.create_po(xlat_po(f), po_type=AIG.JUSTICE) for f in fp ]
+        aig.create_justice(j_pos)
+
+    for fc in N.get_fair_constraints():
+        aig.create_po(xlat_po(fc), po_type=AIG.FAIRNESS)
+
+    print [+f for fp in N.get_fair_properties() for f in fp]
+
+    all_prop_pos = set( itertools.chain(
+        (+p for p in N.get_properties()),
+        (+c for c in N.get_constraints()),
+        (+fc for fc in N.get_fair_constraints()),
+        (+f for fp in N.get_fair_properties() for f in fp)
+    ))
+
+    for po in N.get_POs():
+        if po not in all_prop_pos:
+            aig.create_po(xlat_po(po), po_type=AIG.OUTPUT)
+
+    return aig
+
 def extract(N, candidates, p, k=0):
 
     def is_stabilizing(x):
@@ -114,6 +169,10 @@ if __name__=="__main__":
     #N, po = build_aig2()
 
     N = netlist.read_aiger('/home/sterin/Desktop/hwmcc12-live/cucnt10.aig')
+
+    with open('cucnt_pyzz_to_pyaig.aig', 'w') as f:
+        aig = pyzz_to_pyaig(N)
+        write_aiger(aig, f)
 
     for fp in N.get_fair_properties():
         for pp in fp:
