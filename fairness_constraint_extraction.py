@@ -83,6 +83,9 @@ def extract(N, candidates, p, k=0):
     U = unroll(N, init=False)
     S = solver(U.F)
 
+    for i in xrange(k+2):
+        S.cube( U[N.get_constraints(), i] )
+
     stabilizing_constraints = set()
     polarity_constraints = set()
 
