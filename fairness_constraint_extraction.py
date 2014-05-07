@@ -77,6 +77,7 @@ def fold_fairness_constraints(N, fairness_constraints):
 
     return fair
 
+def build_aig1():
     N = netlist()
 
     ffs = [ N.add_Flop() for _ in xrange(10) ]
@@ -91,9 +92,42 @@ def fold_fairness_constraints(N, fairness_constraints):
     po = N.add_PO(fanin=ffs[-1]&xx)
     N.add_fair_property([po])
 
-    print sc, pc
+    return N, po
+
+def build_aig2():
+
+    N = netlist()
+
+    b0, b1 = [ N.add_Flop(init=solver.l_False) for _ in xrange(2) ]
+    b0[0] = ~b0 | b1
+    b1[0] = b0 | b1
+
+    print "b0=", b0, ", b1=", b1
+
+    po = N.add_PO(fanin=~b1)
+    N.add_fair_property([po])
+
+    return N, po
+
 if __name__=="__main__":
+
+    #N, po = build_aig2()
+
+    N = netlist.read_aiger('/home/sterin/Desktop/hwmcc12-live/cucnt10.aig')
+
+    for fp in N.get_fair_properties():
+        for pp in fp:
+            po = pp
+
+    print pp
+
     sc, pc = extract(N, list(N.get_Flops()), ~po)
+
+    flops= list(N.get_Flops())
+    print len(flops), flops
+
+    print len(sc), sc, set(flops)-set(sc)
+    print len(pc), pc, set(flops)-set(+x for x in pc)
 
     orig_symbols = utils.make_symbols(N)
 
@@ -101,4 +135,3 @@ if __name__=="__main__":
 
     symbols= { "_LIVENESS_LOOP_START":loop_start }
     symbols.update( (n,xlat[s]) for n,s in orig_symbols.iteritems() if s in xlat )
-
