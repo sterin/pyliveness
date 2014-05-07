@@ -4,7 +4,7 @@ from liveness_to_safety import extract_liveness_as_safety
 
 values = ['UNDEF', 'ERROR', 'UNSAT', 'SAT']
 
-def extract(N, p, k=0):
+def extract(N, candidates, p, k=0):
 
     def is_stabilizing(x):
         if S.solve(U[x, k], U[~x, k+1]) == solver.UNSAT:
@@ -31,14 +31,12 @@ def extract(N, p, k=0):
     stabilizing_constraints = set()
     polarity_constraints = set()
 
-    candidate_flops = set(N.get_Flops())
-
     while True:
 
         new_facts = False
         to_remove = []
 
-        for ff in candidate_flops:
+        for ff in candidates:
 
             if ff not in stabilizing_constraints:
 
@@ -62,7 +60,7 @@ def extract(N, p, k=0):
             break
 
         for ff in to_remove:
-            candidate_flops.remove(ff)
+            candidates.remove(ff)
 
     return stabilizing_constraints, polarity_constraints
 
@@ -82,8 +80,8 @@ if __name__=="__main__":
     po = N.add_PO(fanin=ffs[-1]&xx)
     N.add_fair_property([po])
 
-    sc, pc = extract(N, ~po )
     print sc, pc
+    sc, pc = extract(N, list(N.get_Flops()), ~po)
 
     orig_symbols = utils.make_symbols(N)
 
