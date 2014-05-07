@@ -64,7 +64,18 @@ def extract(N, candidates, p, k=0):
 
     return stabilizing_constraints, polarity_constraints
 
-if __name__=="__main__":
+def fold_fairness_constraints(N, fairness_constraints):
+
+    if len(fairness_constraints) == 1:
+        return fairness_constraints[0]
+
+    flops = [ N.add_Flop() for _ in fairness_constraints ]
+    fair = conjunction(N, flops)
+
+    for fc, ff in zip(fairness_constraints, flops):
+        ff[0] = fair.ite(fc, ff|fc )
+
+    return fair
 
     N = netlist()
 
@@ -81,6 +92,7 @@ if __name__=="__main__":
     N.add_fair_property([po])
 
     print sc, pc
+if __name__=="__main__":
     sc, pc = extract(N, list(N.get_Flops()), ~po)
 
     orig_symbols = utils.make_symbols(N)
