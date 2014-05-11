@@ -1,11 +1,26 @@
 from pyzz import *
 from liveness_to_safety import extract_liveness_as_safety
 
+import itertools
+
 values = ['UNDEF', 'ERROR', 'UNSAT', 'SAT']
 
-from pyaig import write_aiger
+from pyaig import AIG, read_aiger, write_aiger
 
-def extract_stabilizing_constraints(N, candidates, fg_prop, k=0):
+def extract_stabilizing_constraints(N, candidates, fg_prop, k=0, conflict_limit=None):
+
+    """
+
+    :type N: pyzz.netlist
+    :type candidates: list
+    :type fg_prop: pyzz._pyzz.wire
+    :type k: int
+    :type conflict_limit: int
+    :return:
+    """
+
+    U = unroll(N, init=False)
+    S = solver(U.F, conflict_limit=conflict_limit)
 
     def is_stabilizing(x):
         if S.solve(U[x, k], U[~x, k+1]) == solver.UNSAT:
@@ -25,9 +40,6 @@ def extract_stabilizing_constraints(N, candidates, fg_prop, k=0):
     def add_polarity(x):
         polarity_constraints.add(x)
         S.cube( U[x,i] for i in xrange(k+2) )
-
-    U = unroll(N, init=False)
-    S = solver(U.F)
 
     for i in xrange(k+2):
         S.cube( U[N.get_constraints(), i] )
@@ -81,65 +93,44 @@ def fold_fairness_constraints(N, fairness_constraints):
 
     return fair
 
-def build_aig1():
-    N = netlist()
-
-    ffs = [ N.add_Flop() for _ in xrange(10) ]
-
-    for i, ff in enumerate(ffs):
-        N.flop_init[ff] = solver.l_True if i==0 else solver.l_False
-        ff[0] = ffs[(i-1) if i>0 else (len(ffs)-1)]
-
-    xx = N.add_Flop(init=solver.l_Undef)
-    xx[0] = xx
-
-    po = N.add_PO(fanin=ffs[-1]&xx)
-    N.add_fair_property([po])
-
-    return N, po
-
-def build_aig2():
-
-    N = netlist()
-
-    b0, b1 = [ N.add_Flop(init=solver.l_False) for _ in xrange(2) ]
-    b0[0] = ~b0 | b1
-    b1[0] = b0 | b1
-
-    print "b0=", b0, ", b1=", b1
-
-    po = N.add_PO(fanin=~b1)
-    N.add_fair_property([po])
-
-    return N, po
-
 if __name__=="__main__":
 
-    #N, po = build_aig2()
+    from optparse import OptionParser
 
-    N = netlist.read_aiger('/home/sterin/Desktop/hwmcc12-live/cucnt10.aig')
+    parser = OptionParser()
 
-    with open('cucnt_pyzz_to_pyaig.aig', 'w') as f:
-        aig = utils.pyzz_to_pyaig(N)
-        write_aiger(aig, f)
+    parser.add_option( "--aiger", dest="aiger", help="input file")
+    parser.add_option( "--outfile", dest="outfile", default="/dev/stdout", help="list of constraints extracted")
+    parser.add_option( "--K", dest="K", type="int", default=0, help="K")
+    parser.add_option( "--conflict_limit", dest="conflict_limit", type="int", default=None, help="conflict limit for each SAT call")
 
-    for fp in N.get_fair_properties():
-        for pp in fp:
-            po = pp
+    options, args = parser.parse_args()
 
-    print pp
+    if not options.aiger:
+        parser.error('--aiger argument missing')
 
-    sc, pc = extract_stabilizing_constraints(N, list(N.get_Flops()), ~po)
+    if not options.outfile:
+        parser.error('--outfile argument missing')
 
-    flops= list(N.get_Flops())
-    print len(flops), flops
+    N = netlist.read_aiger(options.aiger)
 
-    print len(sc), sc, set(flops)-set(sc)
-    print len(pc), pc, set(flops)-set(+x for x in pc)
+    original_flops = list(N.get_Flops())
 
-    orig_symbols = utils.make_symbols(N)
+    assert len(N.get_fair_properties()) == 1
 
-    M, xlat, loop_start = extract_liveness_as_safety(N)
+    all_fcs = list(itertools.chain(N.get_fair_properties()[0], N.get_fair_constraints()))
+    all_fcs = [ w[0]^w.sign() for w in all_fcs]
 
-    symbols= { "_LIVENESS_LOOP_START":loop_start }
-    symbols.update( (n,xlat[s]) for n,s in orig_symbols.iteritems() if s in xlat )
+    fg_prop = ~fold_fairness_constraints(N, all_fcs)
+
+    sc, pc = extract_stabilizing_constraints(N, list(N.get_Flops()), fg_prop, options.K, options.conflict_limit)
+
+    with open(options.outfile, 'w') as f:
+
+        for i, flop in enumerate(original_flops):
+            if flop in pc:
+                print >> f, '+%d'%i
+            elif ~flop in pc:
+                print >> f, '-%d'%i
+            elif flop in sc or ~flop in sc:
+                print >> f, '%d'%i
