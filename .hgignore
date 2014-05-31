@@ -9,3 +9,7 @@ zzz*.aig
 xxx*.aig
 yyy*.aig
 www*.aig
+
+*.rej
+*.orig
+*~
