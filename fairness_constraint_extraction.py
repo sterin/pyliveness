@@ -93,6 +93,36 @@ def fold_fairness_constraints(N, fairness_constraints):
 
     return fair
 
+def xxx(N, candidates, K, conflict_limit):
+
+    M, xlat = N.copy()
+
+    assert len(M.get_fair_properties()) == 1
+
+    all_fcs = list(itertools.chain(M.get_fair_properties()[0], M.get_fair_constraints()))
+    all_fcs = [ w[0]^w.sign() for w in all_fcs]
+
+    fc_prop = fold_fairness_constraints(M, all_fcs)
+    fg_prop = ~fc_prop
+
+    sc, pc = extract_stabilizing_constraints(M, [xlat[w] for w in candidates], fg_prop, K, conflict_limit)
+
+    new_fcs = []
+
+    for c in candidates:
+
+        mc = xlat[c]
+
+        if mc in pc:
+            new_fcs.append(c)
+        elif ~mc in pc:
+            new_fcs.append(~c)
+        elif mc.is_Flop() and ( mc in sc or ~mc in sc ):
+            new_fcs.append( c.equals( c[0]^c.sign()) )
+
+    po = N.add_PO(fanin=conjunction(N, new_fcs))
+    N.add_fair_constraint(po)
+
 if __name__=="__main__":
 
     from optparse import OptionParser
@@ -100,9 +130,10 @@ if __name__=="__main__":
     parser = OptionParser()
 
     parser.add_option( "--aiger", dest="aiger", help="input file")
-    parser.add_option( "--outfile", dest="outfile", default="/dev/stdout", help="list of constraints extracted")
+    parser.add_option( "--outfile", dest="outfile", default=None, help="output aiger file with extracted fairness constraints")
     parser.add_option( "--K", dest="K", type="int", default=0, help="K")
     parser.add_option( "--conflict_limit", dest="conflict_limit", type="int", default=None, help="conflict limit for each SAT call")
+    parser.add_option( "--liveness_to_safety", dest="liveness_to_safety", action="store_true", default=False, help="convert to a safety property")
 
     options, args = parser.parse_args()
 
@@ -114,23 +145,16 @@ if __name__=="__main__":
 
     N = netlist.read_aiger(options.aiger)
 
-    original_flops = list(N.get_Flops())
+    if len(N.get_fair_properties()) != 1:
+        parser.error('input AIGER file must contain exactly one justice property')
 
-    assert len(N.get_fair_properties()) == 1
+    candidates = list(N.get_Flops())
 
-    all_fcs = list(itertools.chain(N.get_fair_properties()[0], N.get_fair_constraints()))
-    all_fcs = [ w[0]^w.sign() for w in all_fcs]
+    xxx(N, candidates, options.K, options.conflict_limit)
 
-    fg_prop = ~fold_fairness_constraints(N, all_fcs)
+    if options.liveness_to_safety:
+        import liveness_to_safety
+        M, xlat, loop_start = extract_liveness_as_safety(N)
+        N = M
 
-    sc, pc = extract_stabilizing_constraints(N, list(N.get_Flops()), fg_prop, options.K, options.conflict_limit)
-
-    with open(options.outfile, 'w') as f:
-
-        for i, flop in enumerate(original_flops):
-            if flop in pc:
-                print >> f, '+%d'%i
-            elif ~flop in pc:
-                print >> f, '-%d'%i
-            elif flop in sc or ~flop in sc:
-                print >> f, '%d'%i
+    N.write_aiger(options.outfile)
