@@ -134,6 +134,7 @@ if __name__=="__main__":
     parser.add_option( "--K", dest="K", type="int", default=0, help="K")
     parser.add_option( "--conflict_limit", dest="conflict_limit", type="int", default=None, help="conflict limit for each SAT call")
     parser.add_option( "--liveness_to_safety", dest="liveness_to_safety", action="store_true", default=False, help="convert to a safety property")
+    parser.add_option( "--no_extract", dest="no_extract", action="store_true", default=False, help="don't extract fairness constraints")
 
     options, args = parser.parse_args()
 
@@ -150,7 +151,8 @@ if __name__=="__main__":
 
     candidates = list(N.get_Flops())
 
-    xxx(N, candidates, options.K, options.conflict_limit)
+    if not options.no_extract:
+        xxx(N, candidates, options.K, options.conflict_limit)
 
     if options.liveness_to_safety:
         import liveness_to_safety
