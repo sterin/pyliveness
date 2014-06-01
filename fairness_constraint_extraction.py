@@ -107,21 +107,33 @@ def xxx(N, candidates, K, conflict_limit):
 
     sc, pc = extract_stabilizing_constraints(M, [xlat[w] for w in candidates], fg_prop, K, conflict_limit)
 
-    new_fcs = []
+    new_fgs = []
 
     for c in candidates:
 
         mc = xlat[c]
 
         if mc in pc:
-            new_fcs.append(c)
+            new_fgs.append(c)
         elif ~mc in pc:
-            new_fcs.append(~c)
+            new_fgs.append(~c)
         elif mc.is_Flop() and ( mc in sc or ~mc in sc ):
-            new_fcs.append( c.equals( c[0]^c.sign()) )
+            new_fgs.append( c.equals( c[0]^c.sign()) )
 
-    po = N.add_PO(fanin=conjunction(N, new_fcs))
-    N.add_fair_constraint(po)
+    new_fgs = conjunction(N, new_fgs)
+
+    for fp in N.get_fair_properties()[0]:
+        assert not fp.sign()
+        fp[0] = fp[0]&new_fgs
+
+    for fc in N.get_fair_constraints():
+        assert not fc.sign()
+        fc[0] = fc[0]&new_fgs
+
+    # po = N.add_PO(fanin=conjunction(N, new_fcs))
+    # N.add_fair_constraint(po)
+
+
 
 if __name__=="__main__":
 
