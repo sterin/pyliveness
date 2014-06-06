@@ -7,6 +7,7 @@ values = ['UNDEF', 'ERROR', 'UNSAT', 'SAT']
 
 from pyaig import AIG, read_aiger, write_aiger
 
+
 def extract_stabilizing_constraints(N, candidates, fg_prop, k=0, conflict_limit=None):
 
     """
@@ -80,6 +81,7 @@ def extract_stabilizing_constraints(N, candidates, fg_prop, k=0, conflict_limit=
 
     return stabilizing_constraints, polarity_constraints
 
+
 def fold_fairness_constraints(N, fairness_constraints):
 
     if len(fairness_constraints) == 1:
@@ -93,7 +95,93 @@ def fold_fairness_constraints(N, fairness_constraints):
 
     return fair
 
-def xxx(N, candidates, K, conflict_limit):
+
+def init_bmc_netlist_common(N, props):
+
+    props = [p[0] ^ p.sign() for p in props]
+    constraints = [c[0] ^ c.sign() for c in N.get_constraints()]
+
+    M, xlat = copy_coi(N, props + constraints)
+
+    props = [ xlat[p] for p in props]
+    constraints = [ xlat[c] for c in constraints]
+
+    failed = somepast(M, ~conjunction(M, constraints))[0]
+
+    return M, xlat, props, failed
+
+
+def init_bmc_netlist_safety(N, props):
+
+    M, xlat, props, failed = init_bmc_netlist_common(N, props)
+
+    bad = M.add_PO( ~conjunction( N, props ) & ~failed)
+    M.add_property(~bad)
+
+    return M, xlat, bad
+
+
+def init_bmc_netlist_liveness(N, fairness_constraints):
+
+    M, xlat, fairness_constraints, failed = init_bmc_netlist_common(N, fairness_constraints)
+
+    M.add_fair_property( N.add_PO(fc) for fc in fairness_constraints )
+
+    monitor = M.add_Buf()
+    N.add_PO(fanin=monitor)
+
+    flops = [ M.add_Flop() for _ in fairness_constraints ]
+    seen = [ monitor&(ff|fc) for ff, fc in zip(flops, fairness_constraints) ]
+
+    toggle = conjunction(M, seen)
+
+    for ff, s in zip(flops, seen):
+        ff[0] = ~toggle & s
+
+    fair = M.add_PO(toggle & ~failed)
+    return M, xlat, fair, monitor
+
+
+def add_stabilizing_constraints_to_netlist(N, candidates, pc, sc):
+
+    new_fgs = []
+
+    for c in candidates:
+
+        if c in pc:
+            new_fgs.append(c)
+        elif ~c in pc:
+            new_fgs.append(~c)
+        elif c.is_Flop() and ( c in sc or ~c in sc ):
+            new_fgs.append(c.equals(c[0] ^ c.sign()))
+
+    fair = N.get_property(0)
+    fair = fair[0]^fair
+
+    N.add_fair_property([ fair & conjunction(N, new_fgs) ])
+
+
+def init_stabilizing_constraints_netlist(N0, fair_prop_no):
+
+    fairs = [ fc[0]^fc.sign() for fc in Ntmp.get_fair_constraints() ]
+    fairs.extend( fp[0]^fp.sign() for fp in N.get_fair_properties()[fair_prop_no])
+
+    Ntmp, xlat, fc_prop, monitor = init_bmc_netlist_liveness(N0, fairs)
+    monitor[0] = Ntmp.True()
+    Ntmp.remove_buffers()
+
+    candidates = [ff for ff in Ntmp.get_Flops()]
+    sc, pc = extract_stabilizing_constraints(M, candidates, fc_prop)
+
+    N, xlat, bad = init_bmc_netlist_safety(Ntmp, [fc_prop])
+    add_stabilizing_constraints_to_netlist(candidates, [xlat[c] for c in pc], [xlat[c] for c in sc])
+
+    return N
+
+def live3(N0, fair_prop_no):
+    N = init_stabilizing_constraints_netlist(N0, fair_prop_no)
+
+def xxx1(N, candidates, K, conflict_limit):
 
     M, xlat = N.copy()
 
@@ -120,19 +208,28 @@ def xxx(N, candidates, K, conflict_limit):
         elif mc.is_Flop() and ( mc in sc or ~mc in sc ):
             new_fgs.append( c.equals( c[0]^c.sign()) )
 
+    return new_fgs
+
+
+def xxx(N, candidates, K, conflict_limit):
+
+    new_fgs = xxx1(N, candidates, K, conflict_limit)
     new_fgs = conjunction(N, new_fgs)
 
-    for fp in N.get_fair_properties()[0]:
-        assert not fp.sign()
-        fp[0] = fp[0]&new_fgs
+    if True:
 
-    for fc in N.get_fair_constraints():
-        assert not fc.sign()
-        fc[0] = fc[0]&new_fgs
+        for fp in N.get_fair_properties()[0]:
+            assert not fp.sign()
+            fp[0] = fp[0]&new_fgs
 
-    # po = N.add_PO(fanin=conjunction(N, new_fcs))
-    # N.add_fair_constraint(po)
+        for fc in N.get_fair_constraints():
+            assert not fc.sign()
+            fc[0] = fc[0]&new_fgs
 
+    else:
+
+        po = N.add_PO(fanin=new_fgs)
+        N.add_fair_constraint(po)
 
 
 if __name__=="__main__":
