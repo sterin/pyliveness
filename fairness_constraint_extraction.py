@@ -1,24 +1,11 @@
+import itertools
+
 from pyzz import *
 from liveness_to_safety import extract_liveness_as_safety
 
-import itertools
-
-values = ['UNDEF', 'ERROR', 'UNSAT', 'SAT']
-
-from pyaig import AIG, read_aiger, write_aiger
-
-
 def extract_stabilizing_constraints(N, candidates, fg_prop, k=0, conflict_limit=None):
 
-    """
-
-    :type N: pyzz.netlist
-    :type candidates: list
-    :type fg_prop: pyzz._pyzz.wire
-    :type k: int
-    :type conflict_limit: int
-    :return:
-    """
+    candidates = set(candidates)
 
     U = unroll(N, init=False)
     S = solver(U.F, conflict_limit=conflict_limit)
@@ -95,142 +82,51 @@ def fold_fairness_constraints(N, fairness_constraints):
 
     return fair
 
+def xxx(N0, fair_po_no, candidates, K, conflict_limit):
 
-def init_bmc_netlist_common(N, props):
+    N, xlat = N0.copy()
 
-    props = [p[0] ^ p.sign() for p in props]
-    constraints = [c[0] ^ c.sign() for c in N.get_constraints()]
+    all_fcs = [ w[0]^w.sign() for w in all_fcs_for_fair_po(N, fair_po_no)]
 
-    M, xlat = copy_coi(N, props + constraints)
-
-    props = [ xlat[p] for p in props]
-    constraints = [ xlat[c] for c in constraints]
-
-    failed = somepast(M, ~conjunction(M, constraints))[0]
-
-    return M, xlat, props, failed
-
-
-def init_bmc_netlist_safety(N, props):
-
-    M, xlat, props, failed = init_bmc_netlist_common(N, props)
-
-    bad = M.add_PO( ~conjunction( N, props ) & ~failed)
-    M.add_property(~bad)
-
-    return M, xlat, bad
-
-
-def init_bmc_netlist_liveness(N, fairness_constraints):
-
-    M, xlat, fairness_constraints, failed = init_bmc_netlist_common(N, fairness_constraints)
-
-    M.add_fair_property( N.add_PO(fc) for fc in fairness_constraints )
-
-    monitor = M.add_Buf()
-    N.add_PO(fanin=monitor)
-
-    flops = [ M.add_Flop() for _ in fairness_constraints ]
-    seen = [ monitor&(ff|fc) for ff, fc in zip(flops, fairness_constraints) ]
-
-    toggle = conjunction(M, seen)
-
-    for ff, s in zip(flops, seen):
-        ff[0] = ~toggle & s
-
-    fair = M.add_PO(toggle & ~failed)
-    return M, xlat, fair, monitor
-
-
-def add_stabilizing_constraints_to_netlist(N, candidates, pc, sc):
-
-    new_fgs = []
-
-    for c in candidates:
-
-        if c in pc:
-            new_fgs.append(c)
-        elif ~c in pc:
-            new_fgs.append(~c)
-        elif c.is_Flop() and ( c in sc or ~c in sc ):
-            new_fgs.append(c.equals(c[0] ^ c.sign()))
-
-    fair = N.get_property(0)
-    fair = fair[0]^fair
-
-    N.add_fair_property([ fair & conjunction(N, new_fgs) ])
-
-
-def init_stabilizing_constraints_netlist(N0, fair_prop_no):
-
-    fairs = [ fc[0]^fc.sign() for fc in Ntmp.get_fair_constraints() ]
-    fairs.extend( fp[0]^fp.sign() for fp in N.get_fair_properties()[fair_prop_no])
-
-    Ntmp, xlat, fc_prop, monitor = init_bmc_netlist_liveness(N0, fairs)
-    monitor[0] = Ntmp.True()
-    Ntmp.remove_buffers()
-
-    candidates = [ff for ff in Ntmp.get_Flops()]
-    sc, pc = extract_stabilizing_constraints(M, candidates, fc_prop)
-
-    N, xlat, bad = init_bmc_netlist_safety(Ntmp, [fc_prop])
-    add_stabilizing_constraints_to_netlist(candidates, [xlat[c] for c in pc], [xlat[c] for c in sc])
-
-    return N
-
-def live3(N0, fair_prop_no):
-    N = init_stabilizing_constraints_netlist(N0, fair_prop_no)
-
-def xxx1(N, candidates, K, conflict_limit):
-
-    M, xlat = N.copy()
-
-    assert len(M.get_fair_properties()) == 1
-
-    all_fcs = list(itertools.chain(M.get_fair_properties()[0], M.get_fair_constraints()))
-    all_fcs = [ w[0]^w.sign() for w in all_fcs]
-
-    fc_prop = fold_fairness_constraints(M, all_fcs)
+    fc_prop = fold_fairness_constraints(N, all_fcs)
     fg_prop = ~fc_prop
 
-    sc, pc = extract_stabilizing_constraints(M, [xlat[w] for w in candidates], fg_prop, K, conflict_limit)
+    sc, pc = extract_stabilizing_constraints(N, [xlat[w] for w in candidates], fg_prop, K, conflict_limit)
 
     new_fgs = []
 
     for c in candidates:
 
-        mc = xlat[c]
+        nc = xlat[c]
 
-        if mc in pc:
+        if nc in pc:
             new_fgs.append(c)
-        elif ~mc in pc:
+        elif ~nc in pc:
             new_fgs.append(~c)
-        elif mc.is_Flop() and ( mc in sc or ~mc in sc ):
+        elif nc.is_Flop() and ( nc in sc or ~nc in sc ):
             new_fgs.append( c.equals( c[0]^c.sign()) )
 
-    return new_fgs
+    new_fgs = conjunction(N0, new_fgs)
 
+    for fp in N0.get_fair_properties()[fair_po_no]:
+        assert not fp.sign()
+        fp[0] = fp[0]&new_fgs
 
-def xxx(N, candidates, K, conflict_limit):
+    for fc in N0.get_fair_constraints():
+        assert not fc.sign()
+        fc[0] = fc[0]&new_fgs
 
-    new_fgs = xxx1(N, candidates, K, conflict_limit)
-    new_fgs = conjunction(N, new_fgs)
+    # for i, prop in enumerate(N0.get_fair_properties()):
+    #     if i!=fair_po_no:
+    #         for w in prop:
+    #             w.remove()
+    #
+    # for p in N0.get_properties():
+    #     w.remove()
+    #
+    # N0.remove_unreach()
 
-    if True:
-
-        for fp in N.get_fair_properties()[0]:
-            assert not fp.sign()
-            fp[0] = fp[0]&new_fgs
-
-        for fc in N.get_fair_constraints():
-            assert not fc.sign()
-            fc[0] = fc[0]&new_fgs
-
-    else:
-
-        po = N.add_PO(fanin=new_fgs)
-        N.add_fair_constraint(po)
-
+    return N0, new_fgs
 
 if __name__=="__main__":
 
@@ -240,10 +136,13 @@ if __name__=="__main__":
 
     parser.add_option( "--aiger", dest="aiger", help="input file")
     parser.add_option( "--outfile", dest="outfile", default=None, help="output aiger file with extracted fairness constraints")
+
+    parser.add_option( "--fair_po_no", dest="fair_po_no", type="int", default=None, help="Liveness PO number")
+
     parser.add_option( "--K", dest="K", type="int", default=0, help="K")
     parser.add_option( "--conflict_limit", dest="conflict_limit", type="int", default=None, help="conflict limit for each SAT call")
-    parser.add_option( "--liveness_to_safety", dest="liveness_to_safety", action="store_true", default=False, help="convert to a safety property")
-    parser.add_option( "--no_extract", dest="no_extract", action="store_true", default=False, help="don't extract fairness constraints")
+
+    parser.add_option( "--l2s", dest="l2s", action="store_true", default=False, help="liveness to safety")
 
     options, args = parser.parse_args()
 
@@ -255,17 +154,24 @@ if __name__=="__main__":
 
     N = netlist.read_aiger(options.aiger)
 
-    if len(N.get_fair_properties()) != 1:
-        parser.error('input AIGER file must contain exactly one justice property')
+    if N.n_fair_properties() == 0:
+        parser.error('not justice properties in AIGER file')
+
+    if options.fair_po_no is None:
+        if N.n_fair_properties() == 1:
+            options.fair_po_no = 0
+        else:
+            parser.error("--fair_po_no is required when there are more than one justice property")
+
+    if N.n_fair_properties() <= options.fair_po_no:
+        parser.error('too few justice properties in AIGER file')
 
     candidates = list(N.get_Flops())
 
-    if not options.no_extract:
-        xxx(N, candidates, options.K, options.conflict_limit)
+    N, new_fgs = xxx(N, options.fair_po_no, candidates, options.K, options.conflict_limit)
 
-    if options.liveness_to_safety:
+    if options.l2s:
         import liveness_to_safety
-        M, xlat, loop_start = extract_liveness_as_safety(N)
-        N = M
+        N, xlat, loop_start = liveness_to_safety.extract_liveness_as_safety(N, new_fgs)
 
     N.write_aiger(options.outfile)
