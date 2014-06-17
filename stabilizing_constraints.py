@@ -1,9 +1,12 @@
+import sys
 import itertools
 
 from pyzz import *
+
+from utils import fold_fairness_constraints
 from liveness_to_safety import extract_liveness_as_safety
 
-def extract_stabilizing_constraints(N, candidates, fg_prop, k=0, conflict_limit=None):
+def compute_stabilizing_constraints(N, candidates, fg_prop, k=0, conflict_limit=None):
 
     candidates = set(candidates)
 
@@ -69,29 +72,15 @@ def extract_stabilizing_constraints(N, candidates, fg_prop, k=0, conflict_limit=
     return stabilizing_constraints, polarity_constraints
 
 
-def fold_fairness_constraints(N, fairness_constraints):
-
-    if len(fairness_constraints) == 1:
-        return fairness_constraints[0]
-
-    flops = [ N.add_Flop() for _ in fairness_constraints ]
-    fair = conjunction(N, flops)
-
-    for fc, ff in zip(fairness_constraints, flops):
-        ff[0] = fair.ite(fc, ff|fc )
-
-    return fair
-
-def xxx(N0, fair_po_no, candidates, K, conflict_limit):
+def extract_stabilizing_constraints(N0, fair_po_no, candidates, K=0, conflict_limit=None):
 
     N, xlat = N0.copy()
 
     all_fcs = [ w[0]^w.sign() for w in all_fcs_for_fair_po(N, fair_po_no)]
 
     fc_prop = fold_fairness_constraints(N, all_fcs)
-    fg_prop = ~fc_prop
 
-    sc, pc = extract_stabilizing_constraints(N, [xlat[w] for w in candidates], fg_prop, K, conflict_limit)
+    sc, pc = compute_stabilizing_constraints(N, [xlat[w] for w in candidates], ~fc_prop, K, conflict_limit)
 
     new_fgs = []
 
@@ -106,27 +95,13 @@ def xxx(N0, fair_po_no, candidates, K, conflict_limit):
         elif nc.is_Flop() and ( nc in sc or ~nc in sc ):
             new_fgs.append( c.equals( c[0]^c.sign()) )
 
-    new_fgs = conjunction(N0, new_fgs)
+    new_fg = conjunction(N0, new_fgs)
 
-    for fp in N0.get_fair_properties()[fair_po_no]:
-        assert not fp.sign()
-        fp[0] = fp[0]&new_fgs
-
-    for fc in N0.get_fair_constraints():
+    for fc in all_fcs_for_fair_po(N0, fair_po_no):
         assert not fc.sign()
-        fc[0] = fc[0]&new_fgs
+        fc[0] = fc[0]&new_fg
 
-    # for i, prop in enumerate(N0.get_fair_properties()):
-    #     if i!=fair_po_no:
-    #         for w in prop:
-    #             w.remove()
-    #
-    # for p in N0.get_properties():
-    #     w.remove()
-    #
-    # N0.remove_unreach()
-
-    return N0, new_fgs
+    return N0, new_fg
 
 if __name__=="__main__":
 
@@ -168,10 +143,9 @@ if __name__=="__main__":
 
     candidates = list(N.get_Flops())
 
-    N, new_fgs = xxx(N, options.fair_po_no, candidates, options.K, options.conflict_limit)
+    N, new_fg = extract_stabilizing_constraints(N, options.fair_po_no, candidates, options.K, options.conflict_limit)
 
     if options.l2s:
-        import liveness_to_safety
-        N, xlat, loop_start = liveness_to_safety.extract_liveness_as_safety(N, new_fgs)
+        N, xlat, _ = extract_liveness_as_safety(N, new_fg)
 
     N.write_aiger(options.outfile)
